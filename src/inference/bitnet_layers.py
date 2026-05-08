@@ -1,23 +1,31 @@
+# src/inference/bitnet_layers.py
 import mlx.core as mx
 import mlx.nn as nn
 
 @mx.compile
 def fused_bitnet(x: mx.array, w: mx.array, r_u: mx.array, r_v: mx.array, tau: float) -> mx.array:
-    # Ternary Weight Quantization: {-1, 0, 1}
+    # Ternary Weight Quantization (Per-Tensor)
     gamma_w = mx.mean(mx.abs(w))
     w_q = mx.round(mx.clip(w / (gamma_w + 1e-5), -1.0, 1.0))
     
-    # 8-bit Activation Quantization
-    gamma_x = mx.max(mx.abs(x))
+    # 8-bit Activation Quantization (Per-Token, mapping over axis=-1)
+    gamma_x = mx.max(mx.abs(x), axis=-1, keepdims=True)
     x_q = mx.clip(x * (127.0 / (gamma_x + 1e-5)), -128.0, 127.0)
     
+    # MatMul natively broadcasts over (B, L, D) -> (B, L, Out)
     y_main = mx.matmul(x_q, w_q.T) * ((gamma_w * gamma_x) / 127.0)
+    
+    # Residual projection
     y_res = mx.matmul(mx.matmul(x, r_v.T), r_u.T)
     res_gate = mx.where(tau > 0.05, y_res * mx.maximum(0.0, 1.0 - tau), mx.zeros_like(y_res))
     
     return y_main + res_gate
 
 class DynamicBitLinear(nn.Module):
+    """
+    v0.71.0 Per-Token Quantized BitLinear.
+    Supports arbitrarily deep (B, L, D) sequences for 100B-class execution.
+    """
     def __init__(self, in_d: int, out_d: int, rank: int = 16):
         super().__init__()
         self.weight = mx.random.normal((out_d, in_d)) * 0.02

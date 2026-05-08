@@ -1,3 +1,4 @@
+# src/infrastructure/distributed_mesh.py
 import mlx.core as mx
 import logging
 
@@ -5,8 +6,8 @@ logger = logging.getLogger("JuniorAGI.Swarm")
 
 class DistributedMesh:
     """
-    Thunderbolt 5 / Network Mesh logic for v1.0 100B Scaling.
-    Hooks into mlx.distributed for multi-mac pipeline parallelism.
+    Thunderbolt Mesh Interconnect.
+    Handles Ring All-Reduce for 100B Swarm execution via mx.distributed.
     """
     def __init__(self):
         self.is_distributed = False
@@ -16,16 +17,17 @@ class DistributedMesh:
 
     def _init_mesh(self):
         try:
-            # Initialize MLX distributed group if launched via mpirun/mlx_run
             import mlx.distributed as dist
             if dist.is_available():
                 self.group = dist.init()
                 self.world_size = self.group.size()
                 self.rank = self.group.rank()
                 self.is_distributed = True
-                logger.info(f"[+] Swarm Node initialized. Rank: {self.rank}/{self.world_size}")
+                logger.info(f"[+] Swarm Mode Active. Rank: {self.rank}/{self.world_size}")
+            else:
+                raise RuntimeError("Distributed not available")
         except Exception:
-            logger.warning("[-] Running in Single-Device Sovereign Mode.")
+            logger.info("[-] Running in Single-Device Sovereign Mode.")
 
     def all_reduce_tensor(self, tensor: mx.array) -> mx.array:
         if self.is_distributed:
