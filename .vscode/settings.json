@@ -1,0 +1,10 @@
+{
+    "python.analysis.extraPaths": ["./src"],
+    "python.autoComplete.extraPaths": ["./src"],
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportUnknownMemberType": "none",
+        "reportMissingImports": "warning"
+    },
+    "python.terminal.executeInFileDir": true
+}

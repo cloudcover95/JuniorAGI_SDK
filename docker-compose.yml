@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  junioragi_api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - AGI_ENVIRONMENT=production
+    volumes:
+      - ./src:/opt/JuniorAGI/src
+    restart: unless-stopped
