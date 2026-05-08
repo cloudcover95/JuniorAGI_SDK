@@ -1,29 +1,47 @@
-# JuniorAGI SDK // Sovereign Intelligence OS
+# JuniorAGI SDK 
+**Edge-Native Sovereign Substrate | Apple Silicon (M1-M5) Optimized**
 
-**JuniorCloud LLC | Lead Architect Node**
-**Deployment Target:** Apple Silicon (M4/M1) | **Power Envelope:** 45W (48V/LiFePO4)
-**Network Topology:** Sovereign Localism (Starlink / Slate AX)
+[![Substrate Version](https://img.shields.io/badge/version-0.63.0-blue.svg)]()
+[![Hardware](https://img.shields.io/badge/hardware-UMA_Metal-gray.svg)]()
+[![Architecture](https://img.shields.io/badge/architecture-BitNet_b1.58-black.svg)]()
 
-## Architecture Overview
-Unlike standard heuristic NLP models, JuniorAGI operates on **deterministic geometric regressions** and **Topological Data Analysis (TDA)**. It fuses a hardware-accelerated mathematical engine with a self-modulating Generative UI sandbox.
+JuniorAGI is a localized, edge-native Artificial General Intelligence framework engineered exclusively for Apple's Unified Memory Architecture (UMA) and Metal Performance Shaders (MPS). It rejects cloud dependency in favor of discrete, logic-dense compute nodes capable of autonomous hardware-level scaling.
 
-### Core Pipelines
-1. **Mathematical Kernel (`fsd_math`)**: High-frequency telemetry is collapsed via explicit Singular Value Decomposition ($A = U \Sigma V^T$). Optimizes for ~14.2 bits of information per dimension, bypassing transformer bloat. Adaptive routing falls back to Numpy CPU RAM hashing if MLX streams are saturated.
-2. **Generative UI Sandbox**: An adaptive `mlx-lm` (Llama-3) bridge that translates topological entropy into dynamic, TradingView-style dark theme frontends (e.g., Rigid Calendar Orchestrators) via WebSockets to an iPad M1 Audit API.
-3. **Hardware Lock (`crispy-mouse`)**: Sovereign execution via ATmega32u4 passthrough, isolating logic gates and trade execution from the host OS kernel.
-4. **Data Lakes**: High-density Time Series (TS) Parquet storage.
+## Architecture: The Spatial Hierarchy
 
-## Security & Directory Isolation Protocol
-The system enforces absolute traversal bans on the following directories to protect proprietary logic and entity structuring:
-* `01_Legal/`
-* `02_Assets/`
+The SDK strictly maps software topology to hardware memory caches:
 
-## Execution Protocol
-The environment is self-contained. No AWS. No Oracle. No external cloud dependencies.
+* **`src/kernel/` (L0 - Executive):** The Sovereign orchestrator. Manages Autonomous Manifold Routing (AMR) and the Compute-to-Value (C2V) economy.
+* **`src/inference/` (L1 - Compute):** MPS-optimized BitNet layers ($1.58$-bit Ternary Weights $\{-1, 0, 1\}$) fused with low-rank FP16 Residuals to maximize arithmetic density.
+* **`src/memsys/` & `src/synapse/` (L2 - Memory):** Vectorized episodic and spatial routing using Metal-accelerated dot-product similarity (cosine metric).
+* **`src/manifolds/` (L2.5 - Specialty):** SVD-aligned value routing, topological spatial detection, and domain-specific gating logic.
+* **`src/logistics/`, `src/fetch/`, `src/enterprise/` (L3 - I/O):** Real-world interfacing, SMTP meshes, Temporal CRON, and high-density data ETL.
+* **`src/api/` & `src/ui/` (Gateway):** Containerized FastAPI routing and websockets for C2 (Command & Control) preemption.
 
-```zsh
-# 1. Activate the M4/Metal virtual environment
-source scripts/junior_venv/bin/activate
+## Core Features
 
-# 2. Boot the Dual-Layer Pipeline (SVD Core + Sandbox Bridge)
-python src/main.py
+* **Dynamic Manifold Rank Adaptation (MRA):** Adjusts residual memory footprint in real-time based on the $\Gamma_t$ (Temporal Surprise) signal to prevent UMA bottlenecks.
+* **Active Buffer Injection (ABI):** Micro-optimization logic allowing the Synaptic Mesh to continuously update local residual tensors without full-weight unrolling.
+* **Absolute C2V Economy:** Hardware profiling strictly dictates inference offloading, adapting instantaneously across Base, Pro, Max, and Ultra topologies (up to multi-die UltraFusion mapping).
+
+## Deployment Protocol
+
+**1. Virtual Environment & Dependencies**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+**2. Standard Node Execution**
+```bash
+uvicorn src.api.node_server:app --host 0.0.0.0 --port 8000
+```
+
+**3. Containerized Logistics (CPU components only)**
+```bash
+docker-compose up --build -d
+```
+
+---
+*Developed by JuniorCloud LLC.*
