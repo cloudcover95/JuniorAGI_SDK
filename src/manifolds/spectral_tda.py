@@ -1,43 +1,41 @@
 import mlx.core as mx
 from typing import Tuple
 
-# Pure module-level functions for @mx.compile to prevent 'self' binding tracebacks
+# GPU Compiled Segment (Matrix Generation)
 @mx.compile
-def compute_spectral_signature(activations: mx.array) -> Tuple[mx.array, mx.array]:
-    """
-    Computes SVD strictly on the GPU: $A = U \Sigma V^T$.
-    Uses Gram matrix eigen-decomposition to bypass CPU bottlenecks.
-    """
+def generate_gram_matrix(activations: mx.array) -> mx.array:
     mean = mx.mean(activations, axis=0, keepdims=True)
     centered = activations - mean
-    gram = mx.matmul(centered, centered.T)
-    eigenvalues, _ = mx.linalg.eigh(gram)
+    return mx.matmul(centered, centered.T)
+
+def compute_spectral_signature(activations: mx.array) -> Tuple[mx.array, mx.array]:
+    """
+    Hybrid Execution: $A = U \Sigma V^T$.
+    Gram generation on GPU -> Eigen Decomposition on CPU (Zero-copy).
+    """
+    # 1. GPU Execution
+    gram = generate_gram_matrix(activations)
+    mx.eval(gram) # Lock buffer before stream swap
     
-    # Filter negative numerical noise and sort descending
+    # 2. CPU Execution (Bypasses linalg::eigh GPU constraint)
+    eigenvalues, _ = mx.linalg.eigh(gram, stream=mx.cpu)
+    
+    # 3. Filter and Derive Gaps (Can remain on CPU or return to GPU context implicitly)
     singular_values = mx.sqrt(mx.maximum(eigenvalues[::-1], 0.0))
     gaps = singular_values[:-1] - singular_values[1:]
     return singular_values, gaps
 
 class SpectralTDAManifold:
-    """
-    Vectorized Topological Data Analysis (TDA).
-    Calculates authentic Betti-0 and Betti-1 proxies using spectral gap derivations
-    ported from JuniorStock/MemSys high-frequency financial modeling (HFFM).
-    """
     def __init__(self, variance_threshold: float = 0.95):
         self.variance_threshold = variance_threshold
 
     def extract_betti_proxies(self, activations: mx.array) -> dict:
         singular_values, gaps = compute_spectral_signature(activations)
         
-        # Calculate variance
         total_v = mx.sum(singular_values ** 2)
         exp_v = mx.cumsum(singular_values ** 2) / (total_v + 1e-9)
         
-        # Betti-0: Dimensionality of connected components explaining 95% variance
         b0 = mx.sum(exp_v < self.variance_threshold).item() + 1
-        
-        # Betti-1: Persistence of 1-cycles identified by anomalous spectral drops
         b1_t = mx.mean(gaps) + 2 * mx.std(gaps)
         b1 = mx.sum(gaps > b1_t).item()
         
