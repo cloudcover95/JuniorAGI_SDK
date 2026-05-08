@@ -16,18 +16,16 @@ class BitNetAttention(nn.Module):
         self.v_proj = DynamicBitLinear(dims, dims)
         self.o_proj = DynamicBitLinear(dims, dims)
 
-    def __call__(self, x: mx.array, mask: mx.array = None, tau: float = 0.0, pb: float = 1.0) -> mx.array:
+    def __call__(self, x: mx.array, tau: float, pb: float, depth_ratio: float) -> mx.array:
         B, L, D = x.shape
-        q = self.q_proj(x, tau, pb).reshape(B, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
-        k = self.k_proj(x, tau, pb).reshape(B, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
-        v = self.v_proj(x, tau, pb).reshape(B, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
+        q = self.q_proj(x, tau, pb, depth_ratio).reshape(B, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
+        k = self.k_proj(x, tau, pb, depth_ratio).reshape(B, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
+        v = self.v_proj(x, tau, pb, depth_ratio).reshape(B, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
         
         scores = mx.matmul(q, k.transpose(0, 1, 3, 2)) * self.scale
-        if mask is not None: scores += mask
-        
         out = mx.matmul(mx.softmax(scores, axis=-1), v)
         out = out.transpose(0, 2, 1, 3).reshape(B, L, D)
-        return self.o_proj(out, tau, pb)
+        return self.o_proj(out, tau, pb, depth_ratio)
 
 class BitNetTransformerBlock(nn.Module):
     def __init__(self, dims: int, num_heads: int, mlp_dim: int):
@@ -39,10 +37,10 @@ class BitNetTransformerBlock(nn.Module):
         self.up_proj = DynamicBitLinear(dims, mlp_dim)
         self.down_proj = DynamicBitLinear(mlp_dim, dims)
 
-    def __call__(self, x: mx.array, mask: mx.array = None, tau: float = 0.0, pb: float = 1.0) -> mx.array:
-        r = self.attention(self.norm1(x), mask, tau, pb)
+    def __call__(self, x: mx.array, tau: float, pb: float, depth_ratio: float) -> mx.array:
+        r = self.attention(self.norm1(x), tau, pb, depth_ratio)
         h = x + r
-        gate = nn.silu(self.gate_proj(self.norm2(h), tau, pb))
-        up = self.up_proj(self.norm2(h), tau, pb)
-        out = self.down_proj(gate * up, tau, pb)
+        gate = nn.silu(self.gate_proj(self.norm2(h), tau, pb, depth_ratio))
+        up = self.up_proj(self.norm2(h), tau, pb, depth_ratio)
+        out = self.down_proj(gate * up, tau, pb, depth_ratio)
         return h + out
