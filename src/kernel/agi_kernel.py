@@ -15,23 +15,25 @@ class JuniorAGI:
         self.memory_palace = MemoryPalace()
         self.ledger = AuditLedger()
         
-        mlp_dim = int(dims * 3.5)
-        self.block = BitNetTransformerBlock(dims=dims, num_heads=heads, mlp_dim=mlp_dim)
-        self.version = "0.72.0"
+        # Tensor Parallelism Sharding
+        local_heads = self.mesh.shard_dimension(heads)
+        local_dims = self.mesh.shard_dimension(dims)
+        mlp_dim = int(local_dims * 3.5)
+        
+        self.block = BitNetTransformerBlock(dims=local_dims, num_heads=local_heads, mlp_dim=mlp_dim)
+        self.version = "0.73.0"
 
     def forward(self, x: mx.array) -> dict:
         x_context = self.memory_palace.retrieve_homologous_context(x)
         
-        # C2V Extraction: Dictates thermal tau and active bit-width
         c2v = self.economy.get_c2v_metrics()
         pb = c2v['power_budget']
         tau = 0.08 if c2v['cpu_headroom'] < 0.5 else 0.02
         
-        # Gated & Scaled Inference
         y = self.block(x_context, mask=None, tau=tau, pb=pb)
         y = self.mesh.all_reduce_tensor(y)
         
         self.memory_palace.commit_state(y)
-        self.ledger.record("inference", {"out_shape": y.shape, "power_budget": pb, "swarm_rank": self.mesh.rank})
+        self.ledger.record("inference", {"shape": y.shape, "pb": pb, "rank": self.mesh.rank})
         
         return {"y": y, "power_budget": pb}
