@@ -6,14 +6,14 @@ def run_scale_test(label: str, dims: int, heads: int):
     print(f"\n[*] Evaluating Scale: {label} (Dim: {dims}, Heads: {heads})")
     
     agi = JuniorAGI(dims=dims, heads=heads)
-    
-    # Account for mesh sharding locally
     local_dims = agi.mesh.shard_dimension(dims)
     x = mx.random.normal((1, 64, local_dims)) 
     
-    warmup = agi.forward(x)
-    mx.eval(warmup["y"]) 
-    pb_used = warmup["power_budget"]
+    # Warmup
+    warmup_out = agi.forward(x)
+    mx.eval(warmup_out["y"]) 
+    pb_used = warmup_out["metrics"]["power_budget"]
+    therm = warmup_out["metrics"]["thermal_pressure"]
     
     start = time.perf_counter()
     for _ in range(10):
@@ -21,9 +21,15 @@ def run_scale_test(label: str, dims: int, heads: int):
     end = time.perf_counter()
     
     mem_used = mx.get_active_memory() / 1024**2
-    bit_width = 8 if pb_used > 0.7 else (6 if pb_used > 0.4 else 4)
     
-    print(f"  -> Power Budget : {pb_used:.2f} (Routing {bit_width}-bit Activation)")
+    q_max = max(3.0, min(127.0, round((pb_used * 120.0) + 7.0)))
+    
+    # Synthetic Joules Per Inference (JPI) Proxy
+    # Higher thermal pressure and higher dimension = more Joules
+    jpi_proxy = (dims * therm * (end-start)) / 1000.0
+    
+    print(f"  -> Power Budget : {pb_used:.2f} (Routing max_val={int(q_max)} Activation)")
+    print(f"  -> Thermal Load : {therm:.2f} (JPI Proxy: {jpi_proxy:.3f} J)")
     print(f"  -> Throughput   : {10/(end-start):.2f} Blocks/sec")
     print(f"  -> UMA VRAM     : {mem_used:.2f} MB")
 

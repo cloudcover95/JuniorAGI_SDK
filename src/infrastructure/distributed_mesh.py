@@ -7,7 +7,7 @@ logger = logging.getLogger("JuniorAGI.Swarm")
 class DistributedMesh:
     """
     Thunderbolt 5 Swarm Interconnect.
-    Implements Column/Row Tensor Parallelism for 100B macro-scaling.
+    Implements Cache-Aligned Tensor Parallelism.
     """
     def __init__(self):
         self.is_distributed = False
@@ -28,14 +28,17 @@ class DistributedMesh:
             logger.info("[-] Running in Single-Device Sovereign Mode.")
 
     def all_reduce_tensor(self, tensor: mx.array) -> mx.array:
-        """Sum gradients and residuals across the mesh."""
         if self.is_distributed:
             import mlx.distributed as dist
             return dist.all_sum(tensor, group=self.group)
         return tensor
 
     def shard_dimension(self, dim: int) -> int:
-        """Tensor Parallelism: Shatters matrix load across the Swarm."""
+        """
+        Shards dimensions ensuring divisibility by Apple Silicon cache lines (usually 128 bytes).
+        """
         if self.is_distributed:
-            return dim // self.world_size
+            sharded = dim // self.world_size
+            # Ensure alignment to 128 (arbitrary but safe cache boundary multiple)
+            return sharded + (128 - (sharded % 128)) if sharded % 128 != 0 else sharded
         return dim
