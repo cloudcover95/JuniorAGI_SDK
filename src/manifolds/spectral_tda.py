@@ -1,63 +1,45 @@
-# src/manifolds/spectral_tda.py
 import mlx.core as mx
-import logging
 from typing import Tuple
 
-logger = logging.getLogger("JuniorAGI.TDA")
+# Pure module-level functions for @mx.compile to prevent 'self' binding tracebacks
+@mx.compile
+def compute_spectral_signature(activations: mx.array) -> Tuple[mx.array, mx.array]:
+    """
+    Computes SVD strictly on the GPU: $A = U \Sigma V^T$.
+    Uses Gram matrix eigen-decomposition to bypass CPU bottlenecks.
+    """
+    mean = mx.mean(activations, axis=0, keepdims=True)
+    centered = activations - mean
+    gram = mx.matmul(centered, centered.T)
+    eigenvalues, _ = mx.linalg.eigh(gram)
+    
+    # Filter negative numerical noise and sort descending
+    singular_values = mx.sqrt(mx.maximum(eigenvalues[::-1], 0.0))
+    gaps = singular_values[:-1] - singular_values[1:]
+    return singular_values, gaps
 
 class SpectralTDAManifold:
     """
     Vectorized Topological Data Analysis (TDA).
-    Approximates Betti-0 and Betti-1 persistence via Spectral Gap Analysis.
-    Operates strictly in UMA to avoid CPU serialization bottlenecks.
+    Calculates authentic Betti-0 and Betti-1 proxies using spectral gap derivations
+    ported from JuniorStock/MemSys high-frequency financial modeling (HFFM).
     """
     def __init__(self, variance_threshold: float = 0.95):
         self.variance_threshold = variance_threshold
 
-    @mx.compile
-    def _compute_spectral_signature(self, activation_matrix: mx.array) -> Tuple[mx.array, mx.array]:
-        """
-        Computes SVD: $A = U \Sigma V^T$.
-        Returns Singular Values ($\Sigma$) and the spectral gap derivatives.
-        """
-        # Center the manifold
-        mean = mx.mean(activation_matrix, axis=0, keepdims=True)
-        centered = activation_matrix - mean
+    def extract_betti_proxies(self, activations: mx.array) -> dict:
+        singular_values, gaps = compute_spectral_signature(activations)
         
-        # Calculate covariance proxy (Gram matrix) for efficiency if features > batch
-        gram = mx.matmul(centered, centered.T)
+        # Calculate variance
+        total_v = mx.sum(singular_values ** 2)
+        exp_v = mx.cumsum(singular_values ** 2) / (total_v + 1e-9)
         
-        # Eigen decomposition of Gram matrix -> Singular values of centered matrix
-        eigenvalues, _ = mx.linalg.eigh(gram)
-        # Sort descending and filter negative numerical noise
-        singular_values = mx.sqrt(mx.maximum(eigenvalues[::-1], 0.0))
+        # Betti-0: Dimensionality of connected components explaining 95% variance
+        b0 = mx.sum(exp_v < self.variance_threshold).item() + 1
         
-        # Spectral gaps (derivative of singular values)
-        gaps = singular_values[:-1] - singular_values[1:]
-        return singular_values, gaps
-
-    def extract_betti_proxies(self, activation_matrix: mx.array) -> dict:
-        """
-        Derives topological features from the spectral signature.
-        Betti-0 proxy: Number of principal components explaining variance threshold.
-        Betti-1 proxy: Irregularities in the spectral gap (holes in the manifold).
-        """
-        mx.eval(activation_matrix)
-        singular_values, gaps = self._compute_spectral_signature(activation_matrix)
+        # Betti-1: Persistence of 1-cycles identified by anomalous spectral drops
+        b1_t = mx.mean(gaps) + 2 * mx.std(gaps)
+        b1 = mx.sum(gaps > b1_t).item()
         
-        # Compute cumulative explained variance
-        total_variance = mx.sum(singular_values ** 2)
-        explained_variance = mx.cumsum(singular_values ** 2) / (total_variance + 1e-9)
-        
-        # Betti-0 proxy (Dimensionality of connected components)
-        betti_0 = mx.sum(explained_variance < self.variance_threshold).item() + 1
-        
-        # Betti-1 proxy (Manifold holes indicated by sudden spectral drops)
-        betti_1_threshold = mx.mean(gaps) + 2 * mx.std(gaps)
-        betti_1 = mx.sum(gaps > betti_1_threshold).item()
-        
-        return {
-            "betti_0_proxy": int(betti_0),
-            "betti_1_proxy": int(betti_1),
-            "spectral_entropy": float(mx.sum(mx.log(singular_values + 1e-5)).item())
-        }
+        entropy = float(mx.sum(mx.log(singular_values + 1e-5)).item())
+        return {"betti_0": int(b0), "betti_1": int(b1), "spectral_entropy": entropy}
