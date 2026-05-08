@@ -15,24 +15,23 @@ class JuniorAGI:
         self.memory_palace = MemoryPalace()
         self.ledger = AuditLedger()
         
-        # Instantiate Target Transformer Class
         mlp_dim = int(dims * 3.5)
         self.block = BitNetTransformerBlock(dims=dims, num_heads=heads, mlp_dim=mlp_dim)
-        self.version = "0.71.0"
+        self.version = "0.72.0"
 
     def forward(self, x: mx.array) -> dict:
-        # Retrieve TDA Memory (Sequence length increases)
         x_context = self.memory_palace.retrieve_homologous_context(x)
         
-        # Forward Pass
-        tau = 0.08 if self.economy.calculate_c2v_ratio()['cpu_headroom_pct'] < 50 else 0.02
-        y = self.block(x_context, mask=None, tau=tau)
+        # C2V Extraction: Dictates thermal tau and active bit-width
+        c2v = self.economy.get_c2v_metrics()
+        pb = c2v['power_budget']
+        tau = 0.08 if c2v['cpu_headroom'] < 0.5 else 0.02
         
-        # Distribute (If Swarm active)
+        # Gated & Scaled Inference
+        y = self.block(x_context, mask=None, tau=tau, pb=pb)
         y = self.mesh.all_reduce_tensor(y)
         
-        # TDA Storage
         self.memory_palace.commit_state(y)
-        self.ledger.record("inference", {"out_shape": y.shape, "rank": self.mesh.rank})
+        self.ledger.record("inference", {"out_shape": y.shape, "power_budget": pb, "swarm_rank": self.mesh.rank})
         
-        return {"y": y, "context_shape": x_context.shape}
+        return {"y": y, "power_budget": pb}

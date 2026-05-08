@@ -1,10 +1,9 @@
 # src/enterprise/audit_ledger.py
 import os
 import time
-import pandas as pd
 import hashlib
+import pandas as pd
 import logging
-from typing import Any, Dict
 
 logger = logging.getLogger("JuniorAGI.Audit")
 
@@ -20,23 +19,21 @@ class AuditLedger:
         self.buffer = []
         self._last_hash = "GENESIS_BLOCK"
 
-    def record_event(self, event_type: str, metadata: Dict[str, Any]):
+    def record(self, event_type: str, metadata: dict):
+        """Unified logging method for the Sovereign Kernel."""
         timestamp = time.time()
-        
-        # Cryptographic linkage
         payload = f"{self._last_hash}{timestamp}{event_type}{metadata}".encode('utf-8')
         current_hash = hashlib.sha256(payload).hexdigest()
         self._last_hash = current_hash
         
-        entry = {
+        self.buffer.append({
             "timestamp": timestamp,
             "event_type": event_type,
             "metadata": str(metadata),
             "chain_hash": current_hash
-        }
-        self.buffer.append(entry)
+        })
         
-        if len(self.buffer) >= 10:  # Flush threshold
+        if len(self.buffer) >= 10:
             self._flush_to_disk()
 
     def _flush_to_disk(self):
@@ -49,4 +46,3 @@ class AuditLedger:
             
         df_final.to_parquet(self.ledger_file, compression='snappy')
         self.buffer.clear()
-        logger.debug(f"[+] Audit Ledger Flushed to disk.")
