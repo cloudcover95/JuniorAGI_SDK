@@ -5,30 +5,29 @@ import mlx.nn as nn
 @mx.compile
 def fused_bitnet(x: mx.array, w: mx.array, r_u: mx.array, r_v: mx.array, tau: float, power_budget: float, depth_ratio: float) -> mx.array:
     """
-    Depth-Aware Fused BitNet Layer.
-    Early layers (depth_ratio ~ 0.0) maintain higher fidelity (near 127).
-    Deep layers (depth_ratio ~ 1.0) compress aggressively to save UMA bandwidth.
+    Depth-Aware Proactive BitNet.
+    Early layers (depth_ratio ~ 0.0) maintain high fidelity.
+    Deep layers (depth_ratio ~ 1.0) compress aggressively to alleviate UMA bandwidth.
     """
     epsilon = 1e-5
     
-    # Ternary Weight Quantization
     gamma_w = mx.mean(mx.abs(w))
     w_q = mx.round(mx.clip(w / (gamma_w + epsilon), -1.0, 1.0))
     
-    # Depth-Aware Activation Clipping
-    # Effective power drops as we go deeper into the network
-    effective_pb = mx.maximum(0.1, mx.array(power_budget) * (1.0 - (depth_ratio * 0.6)))
+    # Depth-Aware q_max interpolation
+    # effective_pb decays smoothly the deeper we go into the transformer stack
+    compression_lambda = 0.5 # Controls aggressive compression at depth
+    effective_pb = mx.maximum(0.1, mx.array(power_budget) * (1.0 - (depth_ratio * compression_lambda)))
+    
+    # Map PB [0,1] -> q_max [3, 127]
     q_max = mx.clip(mx.round((effective_pb * 120.0) + 7.0), 3.0, 127.0)
     
-    # Per-Token Activation Quantization
     gamma_x = mx.max(mx.abs(x), axis=-1, keepdims=True)
     scale = q_max / (gamma_x + epsilon)
     x_q = mx.clip(mx.round(x * scale), -q_max, q_max)
     
-    # MatMul
     y_main = mx.matmul(x_q, w_q.T) * (gamma_w * gamma_x / q_max)
     
-    # Gated Residual
     y_res = mx.matmul(mx.matmul(x, r_v.T), r_u.T)
     res_gate = mx.where(tau > 0.05, y_res * mx.maximum(0.0, 1.0 - tau), mx.zeros_like(y_res))
     

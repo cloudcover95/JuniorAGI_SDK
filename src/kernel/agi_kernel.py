@@ -1,3 +1,4 @@
+# src/kernel/agi_kernel.py
 import sys, os, time, mlx.core as mx
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -8,14 +9,10 @@ from infrastructure.distributed_mesh import DistributedMesh
 from enterprise.audit_ledger import AuditLedger
 
 class JuniorAGI:
-    """
-    v0.76.0 Omni-Tier Sovereign Kernel.
-    Initializes dynamically based on 7B, 70B, or 100B presets.
-    """
     MODEL_PRESETS = {
-        "7B":   {"dims": 4096, "heads": 32, "layers": 4},
-        "70B":  {"dims": 8192, "heads": 64, "layers": 8},
-        "100B": {"dims": 12288, "heads": 96, "layers": 12}
+        "7B":   {"dims": 4096, "heads": 32, "layers": 8},
+        "70B":  {"dims": 8192, "heads": 64, "layers": 16},
+        "100B": {"dims": 12288, "heads": 96, "layers": 24}
     }
 
     def __init__(self, target_scale: str = "7B"):
@@ -24,18 +21,16 @@ class JuniorAGI:
         self.memory_palace = MemoryPalace()
         self.ledger = AuditLedger()
         
-        if target_scale not in self.MODEL_PRESETS:
-            target_scale = "7B"
-            
+        if target_scale not in self.MODEL_PRESETS: target_scale = "7B"
         config = self.MODEL_PRESETS[target_scale]
-        self.num_layers = config["layers"]
         
+        self.num_layers = config["layers"]
         local_heads = self.mesh.shard_dimension(config["heads"])
         local_dims = self.mesh.shard_dimension(config["dims"])
         mlp_dim = int(local_dims * 3.5)
         
         self.layers = [BitNetTransformerBlock(local_dims, local_heads, mlp_dim) for _ in range(self.num_layers)]
-        self.version = "0.76.0"
+        self.version = "0.77.0"
         self.target_scale = target_scale
 
     def forward(self, x: mx.array) -> dict:
@@ -47,12 +42,13 @@ class JuniorAGI:
         tau = 0.08 if c2v['thermal_pressure'] > 0.7 else 0.02
         
         h = x_context
+        # Sequential Layer Execution mapping Depth Ratio to quantizer
         for idx, layer in enumerate(self.layers):
             depth_ratio = idx / max(1, self.num_layers - 1)
             h = layer(h, tau=tau, pb=pb, depth_ratio=depth_ratio)
             
         y = self.mesh.all_reduce_tensor(h)
-        mx.eval(y)
+        mx.eval(y) # Flush pipeline
         
         latency = time.perf_counter() - t0
         jpi = self.economy.calculate_jpi(latency)

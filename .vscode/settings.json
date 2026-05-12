@@ -1,4 +1,5 @@
 {
     "python.analysis.extraPaths": ["./src"],
-    "python.terminal.executeInFileDir": true
+    "python.terminal.executeInFileDir": true,
+    "python.languageServer": "Pylance"
 }

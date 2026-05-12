@@ -1,13 +1,10 @@
+# src/infrastructure/hardware_matrix.py
 import subprocess
 import os
 import platform
 import mlx.core as mx
 
 class HardwareMatrix:
-    """
-    Omni-Platform Hardware Profiler.
-    Defaults to Apple Silicon UMA, gracefully degrades to x86/ARM CPU modes.
-    """
     def __init__(self):
         self.os_type = platform.system()
         self.chip_info = self._get_profile()
