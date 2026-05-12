@@ -1,4 +1,3 @@
-# src/kernel/agi_kernel.py
 import sys, os, time, mlx.core as mx
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -9,20 +8,35 @@ from infrastructure.distributed_mesh import DistributedMesh
 from enterprise.audit_ledger import AuditLedger
 
 class JuniorAGI:
-    def __init__(self, dims: int = 4096, heads: int = 32, num_layers: int = 4):
+    """
+    v0.76.0 Omni-Tier Sovereign Kernel.
+    Initializes dynamically based on 7B, 70B, or 100B presets.
+    """
+    MODEL_PRESETS = {
+        "7B":   {"dims": 4096, "heads": 32, "layers": 4},
+        "70B":  {"dims": 8192, "heads": 64, "layers": 8},
+        "100B": {"dims": 12288, "heads": 96, "layers": 12}
+    }
+
+    def __init__(self, target_scale: str = "7B"):
         self.economy = InternalAttentionEconomy()
         self.mesh = DistributedMesh()
         self.memory_palace = MemoryPalace()
         self.ledger = AuditLedger()
-        self.num_layers = num_layers
         
-        local_heads = self.mesh.shard_dimension(heads)
-        local_dims = self.mesh.shard_dimension(dims)
+        if target_scale not in self.MODEL_PRESETS:
+            target_scale = "7B"
+            
+        config = self.MODEL_PRESETS[target_scale]
+        self.num_layers = config["layers"]
+        
+        local_heads = self.mesh.shard_dimension(config["heads"])
+        local_dims = self.mesh.shard_dimension(config["dims"])
         mlp_dim = int(local_dims * 3.5)
         
-        # Instantiate Layer Array
-        self.layers = [BitNetTransformerBlock(local_dims, local_heads, mlp_dim) for _ in range(num_layers)]
-        self.version = "0.75.0"
+        self.layers = [BitNetTransformerBlock(local_dims, local_heads, mlp_dim) for _ in range(self.num_layers)]
+        self.version = "0.76.0"
+        self.target_scale = target_scale
 
     def forward(self, x: mx.array) -> dict:
         t0 = time.perf_counter()
@@ -32,7 +46,6 @@ class JuniorAGI:
         pb = c2v['power_budget']
         tau = 0.08 if c2v['thermal_pressure'] > 0.7 else 0.02
         
-        # Sequential Layer Execution with Depth Ratio
         h = x_context
         for idx, layer in enumerate(self.layers):
             depth_ratio = idx / max(1, self.num_layers - 1)
@@ -45,6 +58,6 @@ class JuniorAGI:
         jpi = self.economy.calculate_jpi(latency)
         
         self.memory_palace.commit_state(y)
-        self.ledger.record("inference", {"shape": y.shape, "pb": pb, "jpi": jpi, "latency": latency})
+        self.ledger.record("inference", {"scale": self.target_scale, "shape": y.shape, "pb": pb, "jpi": jpi})
         
         return {"y": y, "metrics": c2v, "jpi": jpi, "latency": latency}
