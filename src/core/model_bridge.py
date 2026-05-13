@@ -7,30 +7,34 @@ logger = logging.getLogger("JuniorAGI.Bridge")
 
 def inject_ternary_bridge(model: nn.Module, rank: int = 16) -> nn.Module:
     """
-    Traverses any instantiated MLX model (e.g. from mlx_lm) and atomically 
-    replaces standard nn.Linear layers with JuniorAGI DynamicBitLinear layers.
-    Preserves dimensions while upgrading the architecture to C2V-routed b1.58.
+    Robust Recursive Hot-Swapping.
+    Traverses the MLX AST natively. Bypasses fragile setattr string hacks.
     """
     replaced_count = 0
     total_layers = 0
-    
-    for name, module in model.named_modules():
-        if isinstance(module, nn.Linear):
-            total_layers += 1
-            # Skip output/embedding layers typically
-            if "lm_head" in name or "embed" in name:
-                continue
-                
-            in_d, out_d = module.weight.shape[1], module.weight.shape[0]
-            bit_layer = DynamicBitLinear(in_d, out_d, rank=rank)
-            
-            # Hot-swap the layer in the parent object
-            path = name.split('.')
-            parent = model
-            for p in path[:-1]: parent = getattr(parent, p)
-            setattr(parent, path[-1], bit_layer)
-            
-            replaced_count += 1
 
-    logger.info(f"[+] Model Bridge Complete. Replaced {replaced_count}/{total_layers} Linear layers with Ternary BitNet.")
+    def _traverse_and_replace(module: nn.Module):
+        nonlocal replaced_count, total_layers
+        
+        # Iterate through immediate children
+        for name, child in list(module.children().items()):
+            if isinstance(child, nn.Linear):
+                total_layers += 1
+                # Preserve embedding and output heads
+                if any(x in name.lower() for x in ["lm_head", "embed", "vocab"]):
+                    continue
+                
+                # Extract dimensions and swap
+                in_d, out_d = child.weight.shape[1], child.weight.shape[0]
+                bit_layer = DynamicBitLinear(in_d, out_d, rank=rank)
+                bit_layer.initialize_random() # Or defer to loader
+                
+                setattr(module, name, bit_layer)
+                replaced_count += 1
+            else:
+                # Recurse deeper into the manifold
+                _traverse_and_replace(child)
+
+    _traverse_and_replace(model)
+    logger.info(f"[+] Model Bridge execution complete. {replaced_count}/{total_layers} Linear paths Ternarized.")
     return model

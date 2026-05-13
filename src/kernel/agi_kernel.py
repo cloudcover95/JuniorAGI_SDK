@@ -22,6 +22,11 @@ class JuniorAGI:
         self.router = AgenticRouter(ld)
         self.scale = scale
 
+    def load_from_disk(self, safetensor_path: str):
+        from api.model_loader import SovereignLoader
+        loader = SovereignLoader(self)
+        loader.load_ternary_checkpoint(safetensor_path)
+
     def forward(self, x: mx.array, cmd: dict = None) -> dict:
         t0 = time.perf_counter()
         c2v = self.eco.get_c2v_metrics()
@@ -33,7 +38,6 @@ class JuniorAGI:
         
         for i, lyr in enumerate(self.layers):
             h = lyr(h, tau, pb, i / max(1, self.nl-1))
-            # Agentic Check
             if i == self.nl//2 and self.mesh.rank == 0 and not action:
                 h, a = self.router(h)
                 if a: action = a
@@ -41,14 +45,12 @@ class JuniorAGI:
         y = self.mesh.all_reduce_tensor(h)
         mx.eval(y)
         
-        # Absolute VRAM Lockdown
         gc.collect()
         if hasattr(mx, 'clear_cache'): mx.clear_cache()
         
         lat = time.perf_counter() - t0
         jpi = self.eco.calculate_jpi(lat)
         
-        # Extract Betti proxies and store
         self.mem.commit(y)
         self.ledger.record("inference", {"scale": self.scale, "jpi": jpi, "tool": bool(action)})
         
