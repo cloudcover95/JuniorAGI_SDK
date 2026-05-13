@@ -3,6 +3,7 @@ import sys, os, time, mlx.core as mx
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from core.compute_economy import InternalAttentionEconomy
+from core.agentic_tools import SovereignAgentTools
 from inference.transformer_block import BitNetTransformerBlock
 from synapse.memory_palace import MemoryPalace
 from infrastructure.distributed_mesh import DistributedMesh
@@ -20,6 +21,7 @@ class JuniorAGI:
         self.mesh = DistributedMesh()
         self.memory_palace = MemoryPalace()
         self.ledger = AuditLedger()
+        self.tools = SovereignAgentTools()
         
         if target_scale not in self.MODEL_PRESETS: target_scale = "7B"
         config = self.MODEL_PRESETS[target_scale]
@@ -30,30 +32,47 @@ class JuniorAGI:
         mlp_dim = int(local_dims * 3.5)
         
         self.layers = [BitNetTransformerBlock(local_dims, local_heads, mlp_dim) for _ in range(self.num_layers)]
-        self.version = "0.77.0"
+        self.version = "0.78.0"
         self.target_scale = target_scale
 
-    def forward(self, x: mx.array) -> dict:
+    def _execute_layer_stack(self, x: mx.array, tau: float, pb: float) -> mx.array:
+        """
+        Processes the Transformer stack.
+        (Note: Cannot currently @mx.compile Python lists of classes dynamically in v0.10+
+         without static graph definitions. We optimize by enforcing eval boundaries.)
+        """
+        h = x
+        for idx, layer in enumerate(self.layers):
+            depth_ratio = idx / max(1, self.num_layers - 1)
+            h = layer(h, tau=tau, pb=pb, depth_ratio=depth_ratio)
+        return h
+
+    def forward(self, x: mx.array, call_tools: dict = None) -> dict:
         t0 = time.perf_counter()
+        
+        # Tool execution pre-emption
+        tool_results = None
+        if call_tools:
+            tool_results = self.tools.execute_tool(call_tools.get('name'), call_tools.get('params', {}))
         
         x_context = self.memory_palace.retrieve_homologous_context(x)
         c2v = self.economy.get_c2v_metrics()
         pb = c2v['power_budget']
         tau = 0.08 if c2v['thermal_pressure'] > 0.7 else 0.02
         
-        h = x_context
-        # Sequential Layer Execution mapping Depth Ratio to quantizer
-        for idx, layer in enumerate(self.layers):
-            depth_ratio = idx / max(1, self.num_layers - 1)
-            h = layer(h, tau=tau, pb=pb, depth_ratio=depth_ratio)
-            
+        # Main Compute Execution
+        h = self._execute_layer_stack(x_context, tau, pb)
         y = self.mesh.all_reduce_tensor(h)
-        mx.eval(y) # Flush pipeline
+        mx.eval(y) 
         
+        # Absolute VRAM Ceiling Enforcement
+        if hasattr(mx, 'metal'):
+            mx.metal.clear_cache()
+            
         latency = time.perf_counter() - t0
         jpi = self.economy.calculate_jpi(latency)
         
         self.memory_palace.commit_state(y)
-        self.ledger.record("inference", {"scale": self.target_scale, "shape": y.shape, "pb": pb, "jpi": jpi})
+        self.ledger.record("inference", {"scale": self.target_scale, "pb": pb, "jpi": jpi, "tool_invoked": bool(call_tools)})
         
-        return {"y": y, "metrics": c2v, "jpi": jpi, "latency": latency}
+        return {"y": y, "metrics": c2v, "jpi": jpi, "latency": latency, "tools": tool_results}
