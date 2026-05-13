@@ -1,66 +1,61 @@
 # src/api/injection_pipeline.py
 import mlx.core as mx
-import os, time, logging
+import os, time, logging, json
+from pathlib import Path
 from inference.bitnet_layers import _compute_grouped_ternary
 
 logger = logging.getLogger("JuniorAGI.Converter")
-logging.basicConfig(level=logging.INFO)
 
 class SovereignConverterEngine:
     """
-    Offline Ternary Conversion Engine.
-    Ingests standard .safetensors (Llama, Mistral, JuniorCloud Base).
-    Executes Grouped AbsMean Quantization and packs to int8, compressing
-    disk and memory footprints by ~8.4x before execution.
+    Production Offline Converter.
+    Handles single .safetensors or sharded directories via huggingface index.
+    Aggressive mx.clear_cache() protects UMA during 100B conversions.
     """
     def __init__(self, group_size: int = 128):
         self.group_size = group_size
 
-    def convert_and_save(self, input_path: str, output_path: str = None):
-        if not os.path.exists(input_path):
-            logger.error(f"[-] Void path: {input_path}")
-            return False
-            
-        if output_path is None:
-            base, ext = os.path.splitext(input_path)
-            output_path = f"{base}_junior_ternary.safetensors"
-
-        logger.info(f"[*] Igniting Sovereign Conversion Engine on {input_path}")
+    def convert_and_save(self, model_path: str, output_dir: str = "assets/ternary_models"):
+        path = Path(model_path)
+        os.makedirs(output_dir, exist_ok=True)
+        out_file = os.path.join(output_dir, f"{path.stem}_junior_ternary.safetensors")
+        
+        logger.info(f"[*] Igniting Conversion Engine on: {model_path}")
         t0 = time.perf_counter()
         
-        # Lazy loading via MLX to prevent UMA explosion on 100B variants
-        try:
-            weights = mx.load(input_path)
-        except Exception as e:
-            logger.error(f"[-] Load fault: {e}")
+        # Shard detection
+        files_to_process = []
+        if path.is_dir() and (path / "model.safetensors.index.json").exists():
+            with open(path / "model.safetensors.index.json", 'r') as f:
+                index = json.load(f)
+            shards = set(index['weight_map'].values())
+            files_to_process = [path / s for s in shards]
+        elif path.is_file():
+            files_to_process = [path]
+        else:
+            logger.error("[-] Invalid model path.")
             return False
 
         ternary_dict = {}
-        processed_layers = 0
-        total_layers = len(weights.keys())
+        for shard in files_to_process:
+            logger.info(f"[*] Processing Shard: {shard.name}")
+            weights = mx.load(str(shard))
+            
+            for name, tensor in weights.items():
+                if "weight" in name and len(tensor.shape) == 2 and "embed" not in name and "lm_head" not in name:
+                    w_q, gamma = _compute_grouped_ternary(tensor, self.group_size)
+                    mx.eval(w_q, gamma)
+                    ternary_dict[f"{name}.w_q"] = w_q
+                    ternary_dict[f"{name}.gamma"] = gamma
+                    ternary_dict[f"{name}.shape"] = mx.array(tensor.shape)
+                else:
+                    ternary_dict[name] = tensor
+                    
+            if hasattr(mx, 'clear_cache'): mx.clear_cache()
 
-        for name, tensor in weights.items():
-            # Only quantize 2D linear weight matrices. Biases/Norms stay fp16.
-            if "weight" in name and len(tensor.shape) == 2:
-                w_q, gamma = _compute_grouped_ternary(tensor, self.group_size)
-                # Force evaluation to manage VRAM graph size
-                mx.eval(w_q, gamma)
-                
-                ternary_dict[f"{name}.w_q"] = w_q
-                ternary_dict[f"{name}.gamma"] = gamma
-                ternary_dict[f"{name}.shape"] = mx.array(tensor.shape)
-            else:
-                ternary_dict[name] = tensor
-                
-            processed_layers += 1
-            if processed_layers % 50 == 0:
-                logger.info(f"    -> Converted {processed_layers}/{total_layers} manifolds...")
-                if hasattr(mx, 'clear_cache'): mx.clear_cache()
-
-        logger.info("[*] Compressing and writing int8 binary mapping to disk...")
-        mx.save_safetensors(output_path, ternary_dict)
+        logger.info("[*] Compressing to binary int8 safetensors...")
+        mx.save_safetensors(out_file, ternary_dict)
         
-        t1 = time.perf_counter()
-        size_mb = os.path.getsize(output_path) / 1024**2
-        logger.info(f"[+] Conversion Complete ({t1-t0:.2f}s). Substrate size: {size_mb:.1f} MB -> {output_path}")
+        size_gb = os.path.getsize(out_file) / 1024**3
+        logger.info(f"[+] Conversion Complete ({time.perf_counter()-t0:.2f}s). Out: {size_gb:.2f} GB at {out_file}")
         return True

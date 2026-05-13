@@ -4,8 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "JuniorAGI_SDK"
-version = "0.81.0"
-description = "Sovereign Edge-Native AGI Substrate"
+version = "0.84.0"
+description = "Sovereign Edge-Native AGI Substrate (Apple Silicon Optimized)"
+authors = [{name = "JuniorCloud LLC"}]
 requires-python = ">=3.10"
 dependencies = [
     "mlx>=0.10.0",
@@ -17,3 +18,13 @@ dependencies = [
     "psutil>=5.9.0",
     "gradio>=4.20.0"
 ]
+
+[project.optional-dependencies]
+dev = ["pytest", "mlx-lm>=0.11.0"]
+
+[project.scripts]
+junioragi-convert = "cli:run_converter"
+junioragi-server = "cli:run_server"
+
+[tool.setuptools.packages.find]
+where = ["src"]
