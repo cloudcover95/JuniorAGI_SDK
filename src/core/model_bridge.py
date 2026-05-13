@@ -4,20 +4,17 @@ import logging
 from inference.bitnet_layers import DynamicBitLinear
 
 logger = logging.getLogger("JuniorAGI.Bridge")
+logging.basicConfig(level=logging.INFO)
 
 def inject_ternary_bridge(model: nn.Module) -> nn.Module:
-    """
-    Recursively traverses an active mlx_lm model.
-    Swaps nn.Linear manifolds for JuniorAGI DynamicBitLinear graphs,
-    avoiding embedding spaces and vocab heads.
-    """
+    """Recursively swaps standard FP16 Linear matrices for AMX-Fused Ternary graphs."""
     replaced_count = 0
 
     def _traverse_and_replace(module: nn.Module):
         nonlocal replaced_count
-        for name, child in module.children().items():
+        for name, child in list(module.children().items()):
             if isinstance(child, nn.Linear):
-                # Guard critical boundaries
+                # Protect structural and projective embeddings
                 if any(k in name.lower() for k in ["lm_head", "embed", "vocab", "gate"]):
                     continue
                 
@@ -31,5 +28,5 @@ def inject_ternary_bridge(model: nn.Module) -> nn.Module:
                 _traverse_and_replace(child)
 
     _traverse_and_replace(model)
-    logger.info(f"[+] Model Bridge execution complete. {replaced_count} Linear matrices Ternarized.")
+    logger.info(f"[+] Bridge Protocol Complete. {replaced_count} Linear manifolds Ternarized.")
     return model
