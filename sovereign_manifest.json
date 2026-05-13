@@ -1,7 +1,7 @@
 {
   "substrate": "JuniorAGI_SDK",
   "version": "0.82.0",
-  "audit_timestamp": 1778698271.2295942,
+  "audit_timestamp": 1778698400.7602801,
   "binary_gate": "SOVEREIGN_EDGE_PROTECTED",
   "topology": {
     "L0": "kernel",
@@ -10,8 +10,8 @@
     "L3": "api"
   },
   "tda_ledger_state": {
-    "active_signatures": 0,
-    "last_entropy": null
+    "active_signatures": 15,
+    "last_entropy": -11.512925148010254
   },
   "cryptographic_manifest": {
     "ARCHITECTURE.md": "6d557ddc500c40f933a2886cc51e57bcdd985d4600acc45b7a8fdab84b79ade8",
@@ -19,6 +19,7 @@
     "README.md": "00ca9eecaf30ba2b1b7b1b6ad28e1d4865bcef13c37a3dff8e1123558b179a6b",
     "CONTRIBUTING.md": "6d51b348b0d1b5ea2c02d53e6fe698290d475d15d4d532011cc4fd05b1b4899e",
     "docker-compose.yml": "7c45be0a1a676bcea183bd0fe5e8a5c647915a5d85859fef4639c78dcebad9c9",
+    "sovereign_manifest.json": "ba0707cc9b6d84be98b2b617f78adcc58a0b582bd54543b718859069e02ec3bc",
     "tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "benchmarks/longmen_eval.py": "f1fe5cb5ff65b003ab204969819b8cfca8d674ac67cc7f32026e98afca63b0ad",
     "benchmarks/run_mlx_benchmark.py": "0ffe954f5f8c5afa175908d12e2fd3abb3b86f03a789d14a70e95d8d197a1002",
