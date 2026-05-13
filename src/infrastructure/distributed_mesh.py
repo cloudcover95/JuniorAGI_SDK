@@ -1,31 +1,21 @@
-# src/infrastructure/distributed_mesh.py
 import mlx.core as mx
 import logging
 
 logger = logging.getLogger("JuniorAGI.Swarm")
 
 class DistributedMesh:
-    """
-    Thunderbolt 5 Swarm Interconnect.
-    Implements Cache-Aligned Tensor Parallelism.
-    """
+    """Thunderbolt 5 / IP Mesh for 100B Tensor Parallelism."""
     def __init__(self):
-        self.is_distributed = False
-        self.world_size = 1
-        self.rank = 0
-        self._init_mesh()
-
-    def _init_mesh(self):
+        self.is_distributed, self.world_size, self.rank = False, 1, 0
         try:
             import mlx.distributed as dist
             if dist.is_available():
                 self.group = dist.init()
-                self.world_size = self.group.size()
-                self.rank = self.group.rank()
+                self.world_size, self.rank = self.group.size(), self.group.rank()
                 self.is_distributed = True
                 logger.info(f"[+] Swarm Mode Active. Rank: {self.rank}/{self.world_size}")
-        except Exception:
-            logger.info("[-] Running in Single-Device Sovereign Mode.")
+        except:
+            pass
 
     def all_reduce_tensor(self, tensor: mx.array) -> mx.array:
         if self.is_distributed:
@@ -34,11 +24,7 @@ class DistributedMesh:
         return tensor
 
     def shard_dimension(self, dim: int) -> int:
-        """
-        Shards dimensions ensuring divisibility by Apple Silicon cache lines (usually 128 bytes).
-        """
         if self.is_distributed:
             sharded = dim // self.world_size
-            # Ensure alignment to 128 (arbitrary but safe cache boundary multiple)
             return sharded + (128 - (sharded % 128)) if sharded % 128 != 0 else sharded
         return dim

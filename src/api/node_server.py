@@ -1,69 +1,38 @@
-# src/api/node_server.py
-import json
-import asyncio
-import logging
-import sys
-import os
+import json, asyncio, logging, sys, os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from kernel.agi_kernel import JuniorAGI
 
 logger = logging.getLogger("JuniorAGI.API")
-logging.basicConfig(level=logging.INFO)
-
-sovereign_node = JuniorAGI()
+agi = JuniorAGI()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("[+] Initiating Sovereign Kernel Boot Sequence...")
+    logger.info("Kernel Booted.")
     yield
-    logger.info("[-] Executing Kernel Halt Sequence...")
+    logger.info("Kernel Halted.")
 
-app = FastAPI(title="JuniorAGI Sovereign Node API", lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(lifespan=lifespan)
 
 @app.websocket("/ws/agi")
-async def agi_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    logger.info("[+] C2 WebSocket Connected.")
-    
-    async def receive_commands():
+async def ws_endpoint(ws: WebSocket):
+    await ws.accept()
+    async def rx():
         try:
             while True:
-                data = await websocket.receive_text()
-                payload = json.loads(data)
-                req_type = payload.get("type")
-                
-                if req_type == "inference_request":
+                data = json.loads(await ws.receive_text())
+                if data.get("type") == "inference":
                     import mlx.core as mx
-                    dims = sovereign_node.MODEL_PRESETS[sovereign_node.target_scale]["dims"]
-                    local_dims = sovereign_node.mesh.shard_dimension(dims)
-                    sim_tensor = mx.random.normal((1, 32, local_dims))
-                    
-                    result = sovereign_node.forward(sim_tensor)
-                    result["shape"] = list(result.pop("y").shape) 
-                    await websocket.send_text(json.dumps({"type": "inference_complete", "result": result}))
-                    
-        except WebSocketDisconnect:
-            logger.info("[-] C2 Client disconnected.")
-
-    receive_task = asyncio.create_task(receive_commands())
+                    x = mx.random.normal((1, 32, agi.PRESETS[agi.scale][0]))
+                    res = agi.forward(x, cmd=data.get("tool"))
+                    res["shape"] = list(res.pop("y").shape)
+                    await ws.send_text(json.dumps({"type": "result", "data": res}))
+        except WebSocketDisconnect: pass
+    t = asyncio.create_task(rx())
     try:
         while True:
-            await websocket.send_text(json.dumps({
-                "type": "heartbeat",
-                "telemetry": sovereign_node.economy.get_c2v_metrics()
-            }))
-            await asyncio.sleep(2.0)
-    except WebSocketDisconnect:
-        receive_task.cancel()
+            await ws.send_text(json.dumps({"type": "telemetry", "data": agi.eco.get_c2v_metrics()}))
+            await asyncio.sleep(2)
+    except WebSocketDisconnect: t.cancel()

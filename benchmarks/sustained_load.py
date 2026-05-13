@@ -1,54 +1,26 @@
-# benchmarks/sustained_load.py
 import time, sys, os, mlx.core as mx
-import warnings
-warnings.filterwarnings("ignore")
 sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))
 from kernel.agi_kernel import JuniorAGI
 
-def run_sustained_test(duration_sec: int = 15, scale_preset: str = "7B"):
-    print(f"\n[*] Initiating Sustained Thermal Durability Test ({duration_sec} Seconds)")
-    print(f"[*] Target Scale: {scale_preset} (Checking VRAM Creep Lockdown)")
+def run(sec: int = 15):
+    print(f"[*] v0.81.0 Sustained Load / VRAM Lockdown Test ({sec}s)")
+    agi = JuniorAGI()
+    x = mx.random.normal((1, 64, agi.PRESETS["7B"][0]))
+    mx.eval(agi.forward(x)["y"])
     
-    agi = JuniorAGI(target_scale=scale_preset)
-    local_dims = agi.mesh.shard_dimension(agi.MODEL_PRESETS[scale_preset]["dims"])
-    x = mx.random.normal((1, 128, local_dims))
+    t0 = time.perf_counter()
+    inf, jpi = 0, 0.0
+    print(f"{'Time':<8} | {'TPS':<6} | {'PB':<6} | {'Therm%':<8} | {'JPI':<8} | {'VRAM(MB)'}")
+    print("-" * 55)
     
-    mx.eval(agi.forward(x)["y"]) # Warmup
-    
-    start_time = time.perf_counter()
-    inferences = 0
-    total_jpi = 0.0
-    
-    print(f"{'Time (s)':<10} | {'TPS':<8} | {'Pwr Budg':<10} | {'Thermal%':<10} | {'JPI (Joules)':<15} | {'VRAM (MB)':<10}")
-    print("-" * 75)
-    
-    while (time.perf_counter() - start_time) < duration_sec:
-        loop_start = time.perf_counter()
-        
-        # Intermittent Tool Usage Simulation
-        tool_cmd = {"name": "list_directory", "params": {"directory": ""}} if inferences % 10 == 0 else None
-        
-        out = agi.forward(x, call_tools=tool_cmd)
-        
-        # Explicit scope deletion to trigger Python GC before MLX cache clear
-        del out["y"] 
-        
-        loop_end = time.perf_counter()
-        inferences += 1
-        total_jpi += out["jpi"]
-        
-        if inferences % 5 == 0:
-            elapsed = loop_end - start_time
-            tps = inferences / elapsed
-            mem = mx.get_active_memory() / 1024**2
-            pb = out["metrics"]["power_budget"]
-            therm = out["metrics"]["thermal_pressure"] * 100.0
-            print(f"{elapsed:<10.1f} | {tps:<8.2f} | {pb:<10.3f} | {therm:<9.1f}% | {out['jpi']:<15.4f} | {mem:<10.1f}")
+    while (time.perf_counter() - t0) < sec:
+        out = agi.forward(x)
+        inf += 1
+        jpi += out["jpi"]
+        if inf % 5 == 0:
+            e = time.perf_counter() - t0
+            mem = mx.get_active_memory() / 1024**2 if hasattr(mx, 'get_active_memory') else 0
+            pb, th = out["metrics"]["power_budget"], out["metrics"]["thermal_pressure"] * 100
+            print(f"{e:<8.1f} | {inf/e:<6.2f} | {pb:<6.2f} | {th:<8.1f} | {out['jpi']:<8.2f} | {mem:.1f}")
             
-    print("-" * 75)
-    print(f"Total Inferences : {inferences}")
-    print(f"Total Energy     : {total_jpi:.2f} Joules")
-    print(f"Avg JPI          : {total_jpi/inferences:.4f} Joules/Inference")
-
-if __name__ == "__main__":
-    run_sustained_test(duration_sec=15, scale_preset="7B")
+if __name__ == "__main__": run()

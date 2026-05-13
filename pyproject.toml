@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "JuniorAGI_SDK"
-version = "0.79.0"
-description = "Apple Silicon Native AGI Substrate"
+version = "0.81.0"
+description = "Sovereign Edge-Native AGI Substrate"
 requires-python = ">=3.10"
 dependencies = [
     "mlx>=0.10.0",

@@ -1,44 +1,28 @@
-# src/inference/bitnet_layers.py
 import mlx.core as mx
 import mlx.nn as nn
 
 @mx.compile
-def fused_bitnet(x: mx.array, w: mx.array, r_u: mx.array, r_v: mx.array, tau: float, power_budget: float, depth_ratio: float) -> mx.array:
-    """
-    Depth-Aware Proactive BitNet.
-    Early layers (depth_ratio ~ 0.0) maintain high fidelity.
-    Deep layers (depth_ratio ~ 1.0) compress aggressively to alleviate UMA bandwidth.
-    """
-    epsilon = 1e-5
+def fused_bitnet(x: mx.array, w: mx.array, r_u: mx.array, r_v: mx.array, tau: float, pb: float, depth_ratio: float) -> mx.array:
+    eps = 1e-5
+    g_w = mx.mean(mx.abs(w))
+    w_q = mx.round(mx.clip(w / (g_w + eps), -1.0, 1.0))
     
-    gamma_w = mx.mean(mx.abs(w))
-    w_q = mx.round(mx.clip(w / (gamma_w + epsilon), -1.0, 1.0))
+    # Depth-Aware Q-Max
+    eff_pb = mx.maximum(0.1, mx.array(pb) * (1.0 - (depth_ratio * 0.5)))
+    q_max = mx.clip(mx.round((eff_pb * 120.0) + 7.0), 3.0, 127.0)
     
-    # Depth-Aware q_max interpolation
-    # effective_pb decays smoothly the deeper we go into the transformer stack
-    compression_lambda = 0.5 # Controls aggressive compression at depth
-    effective_pb = mx.maximum(0.1, mx.array(power_budget) * (1.0 - (depth_ratio * compression_lambda)))
+    g_x = mx.max(mx.abs(x), axis=-1, keepdims=True)
+    x_q = mx.clip(mx.round(x * (q_max / (g_x + eps))), -q_max, q_max)
     
-    # Map PB [0,1] -> q_max [3, 127]
-    q_max = mx.clip(mx.round((effective_pb * 120.0) + 7.0), 3.0, 127.0)
-    
-    gamma_x = mx.max(mx.abs(x), axis=-1, keepdims=True)
-    scale = q_max / (gamma_x + epsilon)
-    x_q = mx.clip(mx.round(x * scale), -q_max, q_max)
-    
-    y_main = mx.matmul(x_q, w_q.T) * (gamma_w * gamma_x / q_max)
-    
-    y_res = mx.matmul(mx.matmul(x, r_v.T), r_u.T)
-    res_gate = mx.where(tau > 0.05, y_res * mx.maximum(0.0, 1.0 - tau), mx.zeros_like(y_res))
-    
-    return y_main + res_gate
+    y = mx.matmul(x_q, w_q.T) * (g_w * g_x / q_max)
+    y_r = mx.matmul(mx.matmul(x, r_v.T), r_u.T)
+    return y + mx.where(tau > 0.05, y_r * mx.maximum(0.0, 1.0 - tau), mx.zeros_like(y_r))
 
 class DynamicBitLinear(nn.Module):
     def __init__(self, in_d: int, out_d: int, rank: int = 16):
         super().__init__()
-        self.weight = mx.random.normal((out_d, in_d)) * 0.02
-        self.R_u = mx.random.normal((out_d, rank)) * 0.01
-        self.R_v = mx.random.normal((rank, in_d)) * 0.01
-        
-    def __call__(self, x: mx.array, tau: float = 0.0, power_budget: float = 1.0, depth_ratio: float = 0.0) -> mx.array:
-        return fused_bitnet(x, self.weight, self.R_u, self.R_v, tau, power_budget, depth_ratio)
+        self.w = mx.random.normal((out_d, in_d)) * 0.02
+        self.ru = mx.random.normal((out_d, rank)) * 0.01
+        self.rv = mx.random.normal((rank, in_d)) * 0.01
+    def __call__(self, x: mx.array, tau: float=0., pb: float=1., dr: float=0.) -> mx.array:
+        return fused_bitnet(x, self.w, self.ru, self.rv, tau, pb, dr)
