@@ -1,3 +1,4 @@
+# src/kernel/agi_kernel.py
 import sys, os, time, gc, mlx.core as mx
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -32,6 +33,7 @@ class JuniorAGI:
         
         for i, lyr in enumerate(self.layers):
             h = lyr(h, tau, pb, i / max(1, self.nl-1))
+            # Agentic Check
             if i == self.nl//2 and self.mesh.rank == 0 and not action:
                 h, a = self.router(h)
                 if a: action = a
@@ -39,12 +41,14 @@ class JuniorAGI:
         y = self.mesh.all_reduce_tensor(h)
         mx.eval(y)
         
-        # Absolute VRAM Lockdown (Deprecation Fixed)
+        # Absolute VRAM Lockdown
         gc.collect()
         if hasattr(mx, 'clear_cache'): mx.clear_cache()
         
         lat = time.perf_counter() - t0
         jpi = self.eco.calculate_jpi(lat)
+        
+        # Extract Betti proxies and store
         self.mem.commit(y)
         self.ledger.record("inference", {"scale": self.scale, "jpi": jpi, "tool": bool(action)})
         
